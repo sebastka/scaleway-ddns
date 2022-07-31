@@ -1,0 +1,101 @@
+#!/bin/sh
+set -e      # Abort upon error
+set -u     # Abort upon udefined variable
+#set -x     # Print every command
+#set -o pipefail # Prevents errors in a pipeline from being masked (not supported by dash yet)
+
+readonly path="$(dirname -- "$(readlink -f -- "$0")")"
+
+#######################################
+#   Description:
+#       Update DNS records on Scaleway
+#   Usage:
+#       ./scaleway-ddns
+#   Arguments:
+#        None!
+#   Returns:
+#       0 upon success
+#       >=1 upon error
+#######################################
+main() {
+    # Check if $USAGE is respected
+    readonly USAGE='Usage: ./scaleway-ddns'
+    [ "$#" -ne 0 ] && err "Error: 0 argument(s) expected, $# received" && err "$USAGE" && return 1
+
+    readonly api_endpoint='https://api.scaleway.com'
+
+    find "$path" -name '*.env' | while read f; do
+        set -a; . "$f"; set +a
+
+        record_id="$(get_record_id)"
+        #get_record_update_object
+        record_update
+    done
+}
+
+# Send API call to fetch record ID
+get_record_id() {
+    curl -s "$api_endpoint/domain/v2beta1/dns-zones/$SCALEWAYDDNS_DOMAIN_NAME/records" \
+        -X GET \
+        -G \
+        -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
+        -d "name=$SCALEWAYDDNS_RECORD_NAME" \
+        -d "type=$SCALEWAYDDNS_RECORD_TYPE" \
+        | jq -r '.records | .[] | .id'
+}
+
+# Send API call to update record
+record_update() {
+    record_update_object="$(get_record_update_object)"
+
+    curl -s "$api_endpoint/domain/v2beta1/dns-zones/$SCALEWAYDDNS_DOMAIN_NAME/records" \
+        -X PATCH \
+        -H 'Content-Type: application/json' \
+        -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
+        -d "$record_update_object" \
+        | jq
+}
+
+# Create JSON object used to update the record
+get_record_update_object() {
+    # Fetch IP
+    new_ip=''
+    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ];   then new_ip="$(curl -s 'https://v4.ident.me')"
+    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ];   then new_ip="$(curl -s 'https://v4.ident.me')"
+    else    return 2
+    fi
+
+    # Abort if $new_ip is empty
+    [ ! -z "$new_ip" ] \
+        || { err 'IP could not be retrieved'; return 3; }
+
+    # Create nested object
+    jq -n \
+        --argjson 'changes' "[$(
+            jq -n \
+                --argjson 'set' "$(
+                    jq -n \
+                        --arg 'id' "$record_id" \
+                        --argjson 'records' "[$(
+                            jq -n \
+                                --arg 'data' "$new_ip" \
+                                --arg 'name' "$SCALEWAYDDNS_RECORD_NAME" \
+                                --arg 'ttl' '3600' \
+                                --arg 'type' "$SCALEWAYDDNS_RECORD_TYPE" \
+                                '$ARGS.named'
+                        )]" \
+                        '$ARGS.named'
+                )" \
+                '$ARGS.named'
+        )]" \
+        '$ARGS.named'
+}
+
+#######################################
+#   Print error message to stderr
+#   https://google.github.io/styleguide/shellguide.html
+#######################################
+err() { echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')]: $*" >&2; }
+
+main "$@"; exit
+
