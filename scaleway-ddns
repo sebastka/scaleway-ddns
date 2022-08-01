@@ -60,9 +60,9 @@ record_update() {
 get_record_update_object() {
     # Fetch IP
     new_ip=''
-    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ];   then new_ip="$(curl -s 'https://v4.ident.me')"
-    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ];   then new_ip="$(curl -s 'https://v6.ident.me')"
-    else    return 2
+    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then new_ip="$(curl -s 'https://v4.ident.me')";
+    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then new_ip="$(curl -s 'https://v6.ident.me')";
+    else    return 2;
     fi
 
     # Abort if $new_ip is empty
