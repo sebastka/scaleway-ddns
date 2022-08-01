@@ -12,5 +12,5 @@ $ vi home.domain.tld.env
 
 Run every hour:
 ```
-0 * * * * ./scaleway-ddns >cron.log 2>&1
+0 * * * * ./scaleway-ddns >>cron.log 2>&1
 ```
