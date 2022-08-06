@@ -42,7 +42,7 @@ main() {
 
 # Fetch old IP from 1.1.1.1 and current IP from ident.me
 get_ips() {
-    ip_old="$(dig +short @1.1.1.1 "$UNBOUND_DOMAIN")"
+    ip_old="$(dig +short @1.1.1.1 "$SCALEWAYDDNS_RECORD_NAME.$SCALEWAYDDNS_DOMAIN_NAME")"
 
     ip_current=''
     if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then ip_current="$(curl -s 'https://v4.ident.me')";
