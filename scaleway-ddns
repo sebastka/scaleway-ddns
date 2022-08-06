@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e      # Abort upon error
 set -u      # Abort upon udefined variable
-#set -x     # Print every command
+set -x     # Print every command
 #set -o pipefail # Prevents errors in a pipeline from being masked (not supported by dash yet)
 
 readonly path="$(dirname -- "$(readlink -f -- "$0")")"
@@ -28,7 +28,8 @@ main() {
         set -a; . "$f"; set +a
 
         record_id="$(get_record_id)"
-        #get_record_update_object
+        get_ip
+        get_record_update_object
         record_update
     done
 }
@@ -44,6 +45,27 @@ get_record_id() {
         | jq -r '.records | .[] | .id'
 }
 
+# Fetch IP from ident.me
+get_ip() {
+    ip=''
+    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then ip="$(curl -s 'https://v4.ident.me')";
+    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then ip="$(curl -s 'https://v6.ident.me')";
+    else    return 2;
+    fi
+
+    # Abort if $ip is empty
+    [ ! -z "$ip" ] || { err 'Error: IP could not be retrieved'; return 3; }
+}
+
+# Create JSON object used to update the record
+get_record_update_object() {
+    export SCALEWAYDDNS_RECORD_ID="$record_id"
+    export SCALEWAYDDNS_RECORD_DATA="$ip"
+
+    echo "$json_obj" \
+        | envsubst '$SCALEWAYDDNS_RECORD_ID,$SCALEWAYDDNS_RECORD_DATA,$SCALEWAYDDNS_RECORD_NAME,$SCALEWAYDDNS_RECORD_TYPE'
+}
+
 # Send API call to update record
 record_update() {
     record_update_object="$(get_record_update_object)"
@@ -56,40 +78,24 @@ record_update() {
         | jq
 }
 
-# Create JSON object used to update the record
-get_record_update_object() {
-    # Fetch IP
-    new_ip=''
-    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then new_ip="$(curl -s 'https://v4.ident.me')";
-    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then new_ip="$(curl -s 'https://v6.ident.me')";
-    else    return 2;
-    fi
-
-    # Abort if $new_ip is empty
-    [ ! -z "$new_ip" ] \
-        || { err 'IP could not be retrieved'; return 3; }
-
-    # Create nested object
-    jq -n \
-        --argjson 'changes' "[$(
-            jq -n \
-                --argjson 'set' "$(
-                    jq -n \
-                        --arg 'id' "$record_id" \
-                        --argjson 'records' "[$(
-                            jq -n \
-                                --arg 'data' "$new_ip" \
-                                --arg 'name' "$SCALEWAYDDNS_RECORD_NAME" \
-                                --arg 'ttl' '3600' \
-                                --arg 'type' "$SCALEWAYDDNS_RECORD_TYPE" \
-                                '$ARGS.named'
-                        )]" \
-                        '$ARGS.named'
-                )" \
-                '$ARGS.named'
-        )]" \
-        '$ARGS.named'
+readonly json_obj='{
+  "changes": [
+    {
+      "set": {
+        "id": "${SCALEWAYDDNS_RECORD_ID}",
+        "records": [
+          {
+            "data": "${SCALEWAYDDNS_RECORD_DATA}",
+            "name": "${SCALEWAYDDNS_RECORD_NAME}",
+            "ttl": "3600",
+            "type": "${SCALEWAYDDNS_RECORD_TYPE}"
+          }
+        ]
+      }
+    }
+  ]
 }
+'
 
 #######################################
 #   Print error message to stderr
