@@ -27,10 +27,31 @@ main() {
     find "$path" -name '*.env' | while read f; do
         set -a; . "$f"; set +a
 
+        get_ips
+
+        # Abort if old and current IP are the same
+        if [ "$ip_old" = "$ip_current" ]; then
+            printf '%s.%s: Nothing to update. Abort.\n' "$SCALEWAYDDNS_RECORD_NAME" "$SCALEWAYDDNS_DOMAIN_NAME"
+            continue;
+        done
+
         record_id="$(get_record_id)"
-        get_ip
         record_update
     done
+}
+
+# Fetch old IP from 1.1.1.1 and current IP from ident.me
+get_ips() {
+    ip_old="$(dig +short @1.1.1.1 "$UNBOUND_DOMAIN")"
+
+    ip_current=''
+    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then ip_current="$(curl -s 'https://v4.ident.me')";
+    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then ip_current="$(curl -s 'https://v6.ident.me')";
+    else    return 2;
+    fi
+
+    # Abort if $ip_current is empty
+    [ ! -z "$ip_current" ] || { err 'Error: IP could not be retrieved'; return 3; }
 }
 
 # Send API call to fetch record ID
@@ -42,18 +63,6 @@ get_record_id() {
         -d "name=$SCALEWAYDDNS_RECORD_NAME" \
         -d "type=$SCALEWAYDDNS_RECORD_TYPE" \
         | jq -r '.records | .[] | .id'
-}
-
-# Fetch IP from ident.me
-get_ip() {
-    ip=''
-    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then ip="$(curl -s 'https://v4.ident.me')";
-    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then ip="$(curl -s 'https://v6.ident.me')";
-    else    return 2;
-    fi
-
-    # Abort if $ip is empty
-    [ ! -z "$ip" ] || { err 'Error: IP could not be retrieved'; return 3; }
 }
 
 # Create JSON object used to update the record
