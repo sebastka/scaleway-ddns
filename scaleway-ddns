@@ -33,7 +33,7 @@ main() {
         if [ "$ip_old" = "$ip_current" ]; then
             printf '%s.%s: Nothing to update. Abort.\n' "$SCALEWAYDDNS_RECORD_NAME" "$SCALEWAYDDNS_DOMAIN_NAME"
             continue;
-        done
+        fi
 
         record_id="$(get_record_id)"
         record_update
