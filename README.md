@@ -1,6 +1,6 @@
 # scaleway-ddns
 
-Update records on Scaleway's DNS server using API calls.
+Update DNS record on Scaleway's nameserver using their API.
 
 Set up .env files for every record to update:
 ```
