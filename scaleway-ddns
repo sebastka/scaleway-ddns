@@ -29,7 +29,6 @@ main() {
 
         record_id="$(get_record_id)"
         get_ip
-        get_record_update_object
         record_update
     done
 }
