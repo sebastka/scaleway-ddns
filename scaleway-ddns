@@ -68,7 +68,7 @@ get_record_id() {
 # Create JSON object used to update the record
 get_record_update_object() {
     export SCALEWAYDDNS_RECORD_ID="$record_id"
-    export SCALEWAYDDNS_RECORD_DATA="$ip"
+    export SCALEWAYDDNS_RECORD_DATA="$ip_current"
 
     echo "$json_obj" \
         | envsubst '$SCALEWAYDDNS_RECORD_ID,$SCALEWAYDDNS_RECORD_DATA,$SCALEWAYDDNS_RECORD_NAME,$SCALEWAYDDNS_RECORD_TYPE'
