@@ -22,7 +22,7 @@ main() {
     readonly USAGE='Usage: ./scaleway-ddns'
     [ "$#" -ne 0 ] && err "Error: 0 argument(s) expected, $# received" && err "$USAGE" && return 1
 
-    readonly api_endpoint="https://api.scaleway.com/domain/v2beta1/dns-zones/$SCALEWAYDDNS_DOMAIN_NAME/records"
+    readonly api_endpoint="https://api.scaleway.com/domain/v2beta1/dns-zones"
 
     find "$path" -name '*.env' | while read f; do
         set -a; . "$f"; set +a
@@ -56,7 +56,7 @@ get_ips() {
 
 # Send API call to fetch record ID
 get_record_id() {
-    curl -s "$api_endpoint" \
+    curl -s "$api_endpoint/$SCALEWAYDDNS_DOMAIN_NAME/records" \
         -X GET \
         -G \
         -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
@@ -78,7 +78,7 @@ get_record_update_object() {
 record_update() {
     record_update_object="$(get_record_update_object)"
 
-    curl -s "$api_endpoint" \
+    curl -s "$api_endpoint/$SCALEWAYDDNS_DOMAIN_NAME/records" \
         -X PATCH \
         -H 'Content-Type: application/json' \
         -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
