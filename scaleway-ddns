@@ -1,106 +1,114 @@
 #!/bin/sh
-set -e      # Abort upon error
-set -u      # Abort upon udefined variable
-#set -x     # Print every command
+set -e    # Abort upon error
+set -u    # Abort upon udefined variable
+#set -x   # Print every command
 #set -o pipefail # Prevents errors in a pipeline from being masked (not supported by dash yet)
 
 readonly path="$(dirname -- "$(readlink -f -- "$0")")"
 
 #######################################
 #   Description:
-#       Update DNS records on Scaleway
+#     Update DNS records on Scaleway
 #   Usage:
-#       ./scaleway-ddns
+#     ./scaleway-ddns
 #   Arguments:
-#        None!
+#    None!
 #   Returns:
-#       0 upon success
-#       >=1 upon error
+#     0 upon success
+#     >=1 upon error
 #######################################
 main() {
-    # Check if $USAGE is respected
-    readonly USAGE='Usage: ./scaleway-ddns'
-    [ "$#" -ne 0 ] && err "Error: 0 argument(s) expected, $# received" && err "$USAGE" && return 1
+  # Check if $USAGE is respected
+  readonly USAGE='Usage: ./scaleway-ddns'
+  [ "$#" -ne 0 ] && err "Error: 0 argument(s) expected, $# received" && err "$USAGE" && return 1
 
-    readonly api_endpoint="https://api.scaleway.com/domain/v2beta1/dns-zones"
+  readonly api_endpoint="https://api.scaleway.com/domain/v2beta1/dns-zones"
 
-    find "$path" -name '*.env' | while read f; do
-        set -a; . "$f"; set +a
+  find "$path" -name '*.env' | while read f; do
+    set -a; . "$f"; set +a
 
-        get_ips
+    get_ips
 
-        # Abort if old and current IP are the same
-        if [ "$ip_old" = "$ip_current" ]; then
-            printf '%s.%s: Nothing to update. Abort.\n' "$SCALEWAYDDNS_RECORD_NAME" "$SCALEWAYDDNS_DOMAIN_NAME"
-            continue;
-        fi
+    # Abort if old and current IP are the same
+    if [ "$current_record" = "$ip_current" ]; then
+      printf '%s.%s: Nothing to update. Abort.\n' "$SCALEWAYDDNS_RECORD_NAME" "$SCALEWAYDDNS_DOMAIN_NAME"
+      continue;
+    fi
 
-        record_id="$(get_record_id)"
-        record_update
-    done
+    record_id="$(get_record_id)"
+    record_update
+  done
 }
 
 # Fetch old IP from SCALEWAYDDNS_NS_QUERY and current IP from ident.me
 get_ips() {
-    ip_old="$(dig +short @$SCALEWAYDDNS_NS_QUERY "$SCALEWAYDDNS_RECORD_NAME.$SCALEWAYDDNS_DOMAIN_NAME")"
+  current_record="$(dig +short @$SCALEWAYDDNS_NS_QUERY "$SCALEWAYDDNS_RECORD_NAME.$SCALEWAYDDNS_DOMAIN_NAME")"
 
-    ip_current=''
-    if      [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'    ]; then ip_current="$(curl -s 'https://v4.ident.me')";
-    elif    [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then ip_current="$(curl -s 'https://v6.ident.me')";
-    else    return 2;
-    fi
+  # If public facing device is passed, use it to fetch public ip
+  ip_current=''
+  if [ "$SCALEWAYDDNS_RECORD_TYPE" = 'A'  ]; then
+    [ -z "$DEV_WAN" ] \
+      && ip_current="$(curl -s 'https://v4.ident.me')" \
+      || ip_current="$(ip -4 addr show dev "$DEV_WAN" | grep -Eo '([[:digit:]]{1,3}\.){3}[[:digit:]]{1,3}' | sed 1q)"
+  elif [ "$SCALEWAYDDNS_RECORD_TYPE" = 'AAAA' ]; then
+    [ -z "$DEV_WAN" ] \
+      && ip_current="$(curl -s 'https://v6.ident.me')" \
+      || ip_current="$(ip -6 addr show dev "$DEV_WAN" | grep -Eo '([[:alnum:]]{0,4}:){5}[[:alnum:]]{0,4}')"
+  else
+    return 2;
+  fi
 
-    # Abort if $ip_current is empty
-    [ ! -z "$ip_current" ] || { err 'Error: IP could not be retrieved'; return 3; }
+  # Abort if $ip_current is empty
+  [ ! -z "$ip_current" ] || { err 'Error: IP could not be retrieved'; return 3; }
 }
 
 # Send API call to fetch record ID
 get_record_id() {
-    curl -s "$api_endpoint/$SCALEWAYDDNS_DOMAIN_NAME/records" \
-        -X GET \
-        -G \
-        -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
-        -d "name=$SCALEWAYDDNS_RECORD_NAME" \
-        -d "type=$SCALEWAYDDNS_RECORD_TYPE" \
-        | jq -r '.records | .[] | .id'
+  curl -s "$api_endpoint/$SCALEWAYDDNS_DOMAIN_NAME/records" \
+    -X GET \
+    -G \
+    -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
+    -d "name=$SCALEWAYDDNS_RECORD_NAME" \
+    -d "type=$SCALEWAYDDNS_RECORD_TYPE" \
+    | jq -r '.records | .[] | .id'
 }
 
 # Create JSON object used to update the record
 get_record_update_object() {
-    export SCALEWAYDDNS_RECORD_ID="$record_id"
-    export SCALEWAYDDNS_RECORD_DATA="$ip_current"
+  export SCALEWAYDDNS_RECORD_ID="$record_id"
+  export SCALEWAYDDNS_RECORD_DATA="$ip_current"
 
-    echo "$json_obj" \
-        | envsubst '$SCALEWAYDDNS_RECORD_ID,$SCALEWAYDDNS_RECORD_DATA,$SCALEWAYDDNS_RECORD_NAME,$SCALEWAYDDNS_RECORD_TYPE'
+  echo "$json_obj" \
+    | envsubst '$SCALEWAYDDNS_RECORD_ID,$SCALEWAYDDNS_RECORD_DATA,$SCALEWAYDDNS_RECORD_NAME,$SCALEWAYDDNS_RECORD_TYPE'
 }
 
 # Send API call to update record
 record_update() {
-    record_update_object="$(get_record_update_object)"
+  record_update_object="$(get_record_update_object)"
 
-    curl -s "$api_endpoint/$SCALEWAYDDNS_DOMAIN_NAME/records" \
-        -X PATCH \
-        -H 'Content-Type: application/json' \
-        -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
-        -d "$record_update_object" \
-        | jq
+  curl -s "$api_endpoint/$SCALEWAYDDNS_DOMAIN_NAME/records" \
+    -X PATCH \
+    -H 'Content-Type: application/json' \
+    -H "X-Auth-Token: $SCALEWAYDDNS_SECRET_KEY" \
+    -d "$record_update_object" \
+    | jq
 }
 
 readonly json_obj='{
   "changes": [
-    {
-      "set": {
-        "id": "${SCALEWAYDDNS_RECORD_ID}",
-        "records": [
-          {
-            "data": "${SCALEWAYDDNS_RECORD_DATA}",
-            "name": "${SCALEWAYDDNS_RECORD_NAME}",
-            "ttl": "3600",
-            "type": "${SCALEWAYDDNS_RECORD_TYPE}"
-          }
-        ]
+  {
+    "set": {
+    "id": "${SCALEWAYDDNS_RECORD_ID}",
+    "records": [
+      {
+      "data": "${SCALEWAYDDNS_RECORD_DATA}",
+      "name": "${SCALEWAYDDNS_RECORD_NAME}",
+      "ttl": "3600",
+      "type": "${SCALEWAYDDNS_RECORD_TYPE}"
       }
+    ]
     }
+  }
   ]
 }
 '
